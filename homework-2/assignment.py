@@ -1,6 +1,52 @@
 
 # coding: utf-8
 
+# In[ ]:
+
+
+# OLD VERSION!! DON'T DELETE!
+#     # The dictionary data should have the form: query_id --> (document_score, external_doc_id)
+#     for query_id, query_terms in tokenized_queries.items():
+        
+#         if (int(query_id) - 50) % 15 == 0:
+#             print('Finished {}%...'.format((int(query_id) - 50) / 15 * 10))
+            
+#         document_score = defaultdict(float)
+        
+#         for query_term_id in query_terms:
+#             for int_doc_id in inverted_index[query_term_id]:
+#                 ext_doc_id = index.document(int_doc_id)
+#                 document_term_freq = inverted_index[query_term_id][int_doc_id]
+#                 document_score[ext_doc_id] += score_fn(int_doc_id, query_term_id, document_term_freq)
+                
+#         query_result = [(doc_score, ext_doc_id) for ext_doc_id, doc_score in document_score.items()]
+#         data[query_id] = query_result
+
+# OLD VERSION!! DON'T DELETE!
+# import numpy as np
+
+# def tfidf(int_document_id, query_term_id, document_term_freq):
+#     """
+#     Scoring function for a document and a query term
+    
+#     :param int_document_id: the document id
+#     :param query_token_id: the query term id (assuming you have split the query to tokens)
+#     :param document_term_freq: the document term frequency of the query term 
+#     """
+#     tf = document_term_freq/document_lengths[int_document_id]
+#     df = len(inverted_index[query_term_id])
+#     idf = num_documents/df
+#     score = np.log(1 + tf) * np.log(idf)
+#     return score
+
+# # combining the two functions above: 
+# run_retrieval('tfidf', tfidf)
+
+# # TODO implement the rest of the retrieval functions 
+
+# # TODO implement tools to help you with the analysis of the results.
+
+
 # # Searching Unstructured and Structured Data #
 # ## Assignment 1: Retrieval models [100 points] ##
 # **TA**: Nikos Voskarides (n.voskarides@uva.nl)
@@ -289,9 +335,10 @@ with open('./ap_88_89/topics_title', 'r') as f_topics:
 
 # **IMPORTANT**: You should structure your code around the helper functions we provide below.
 
-# In[21]:
+# In[34]:
 
 
+from collections import Counter
 with open('./ap_88_89/topics_title', 'r') as f_topics:
     queries = parse_topics([f_topics])
 
@@ -306,6 +353,10 @@ tokenized_queries = {
                for token in index.tokenize(query_string)
                if dictionary.has_token(token)]
     for query_id, query_string in queries.items()}
+#TODO: Explain why we need it
+query_term_counts = {
+    query_id: Counter(query_terms) 
+    for query_id, query_terms in tokenized_queries.items()}
 
 query_term_ids = set(
     query_term_id
@@ -353,7 +404,7 @@ avg_doc_length = total_terms / num_documents
 print('Inverted index creation took', time.time() - start_time, 'seconds.')
 
 
-# In[24]:
+# In[43]:
 
 
 from collections import defaultdict
@@ -375,23 +426,19 @@ def run_retrieval(model_name, score_fn):
     print('Retrieving using', model_name)
 
     data = {}
-    
     # The dictionary data should have the form: query_id --> (document_score, external_doc_id)
-    for query_id, query_terms in tokenized_queries.items():
+    for query_id in tokenized_queries:
         
         if (int(query_id) - 50) % 15 == 0:
             print('Finished {}%...'.format((int(query_id) - 50) / 15 * 10))
             
-        document_score = defaultdict(float)
-        
-        for query_term_id in query_terms:
-            for int_doc_id in inverted_index[query_term_id]:
-                ext_doc_id = index.document(int_doc_id)
-                document_term_freq = inverted_index[query_term_id][int_doc_id]
-                document_score[ext_doc_id] += score_fn(int_doc_id, query_term_id, document_term_freq)
-                
-        query_result = [(doc_score, ext_doc_id) for ext_doc_id, doc_score in document_score.items()]
-        data[query_id] = query_result
+        doc_result = []
+        for int_doc_id in range(index.document_base(), index.maximum_document()):
+            ext_doc_id = index.document(int_doc_id)
+            doc_score = score_fn(int_doc_id, query_id)
+            doc_result.append((doc_score, ext_doc_id))
+        data[query_id] = doc_result
+
     with open(run_out_path, 'w') as f_out:
         write_run(
             model_name=model_name,
@@ -400,31 +447,98 @@ def run_retrieval(model_name, score_fn):
             max_objects_per_query=1000)
 
 
-# In[25]:
+# In[44]:
 
 
 import numpy as np
-
-def tfidf(int_document_id, query_term_id, document_term_freq):
+def tfidf(int_document_id, query_id):
     """
     Scoring function for a document and a query term
     
     :param int_document_id: the document id
-    :param query_token_id: the query term id (assuming you have split the query to tokens)
-    :param document_term_freq: the document term frequency of the query term 
+    :param query_token_id: the query id
     """
-    tf = document_term_freq/document_lengths[int_document_id]
-    df = len(inverted_index[query_term_id])
-    idf = num_documents/df
-    score = np.log(1 + tf) * np.log(idf)
+    
+    score = 0
+    for query_term_id in tokenized_queries[query_id]:
+        if int_document_id in inverted_index[query_term_id]: 
+            document_term_freq = inverted_index[query_term_id][int_document_id]
+            tf = document_term_freq/document_lengths[int_document_id]
+            df = len(inverted_index[query_term_id])
+            idf = num_documents/df
+            score += np.log(1 + tf) * np.log(idf)
+            
     return score
 
-# combining the two functions above: 
 run_retrieval('tfidf', tfidf)
 
 # TODO implement the rest of the retrieval functions 
 
 # TODO implement tools to help you with the analysis of the results.
+
+
+# In[48]:
+
+
+def bm25(int_document_id, query_id):
+    k1=1.2
+    b=0.75
+    # TODO: check if we actually have to use k3
+    k3=1.6
+    score = 0
+    
+    for query_term_id in set(tokenized_queries[query_id]):
+        if int_document_id in inverted_index[query_term_id]: 
+#             document_term_freq = inverted_index[query_term_id][int_document_id]
+#             tf_td = document_term_freq/Ld
+            
+            Ld = document_lengths[int_document_id]
+            Lavg = avg_doc_length
+            
+            tf_td = inverted_index[query_term_id][int_document_id]
+            
+            df = len(inverted_index[query_term_id])
+            idf = num_documents/df
+            
+            tf_tq = query_term_counts[query_id][query_term_id]
+            
+            first_term = np.log(idf)
+            second_term = ((k1+1)*tf_td)/(k1*((1-b)+b*(Ld/avg_doc_length))+tf_td)
+            third_term = (k3+1)*tf_tq/(k3+tf_tq)
+            
+            score += first_term * second_term * third_term
+    
+    
+    return score
+
+run_retrieval('bm25', bm25)
+
+
+# In[ ]:
+
+
+import functools
+
+def jelinek_mercer(int_document_id, query_id, lambd=0.1):
+    
+    score = 0
+    for query_term_id in set(tokenized_queries[query_id]):
+        if int_document_id in inverted_index[query_term_id]:
+            # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
+            # basically, just a model with unigram probability
+            tf = inverted_index[query_term_id][int_document_id]
+            doc_len = document_lengths[int_document_id] 
+            
+            first_term = lambd * tf/doc_len
+            second_term = (1 - lambd) * collection_frequencies[query_term_id]/total_terms
+            
+            score += first_term * second_term
+            
+    return score
+
+for lambd_val in [0.1, 0.5, 0.9]:
+    jel_merc_func = functools.partial(jelinek_mercer, lambd = lambd_val)
+    run_retrieval('jelinek-mercer', jel_merc_func)
 
 
 # ### Task 2: Latent Semantic Models (LSMs) [20 points] ###

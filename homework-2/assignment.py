@@ -4,7 +4,7 @@
 # In[ ]:
 
 
-# OLD VERSION!! DON'T DELETE!
+# IMPORTANT OLD VERSION!! DON'T DELETE!
 #     # The dictionary data should have the form: query_id --> (document_score, external_doc_id)
 #     for query_id, query_terms in tokenized_queries.items():
         
@@ -22,7 +22,7 @@
 #         query_result = [(doc_score, ext_doc_id) for ext_doc_id, doc_score in document_score.items()]
 #         data[query_id] = query_result
 
-# OLD VERSION!! DON'T DELETE!
+# IMPORTANT OLD VERSION!! DON'T DELETE!
 # import numpy as np
 
 # def tfidf(int_document_id, query_term_id, document_term_freq):
@@ -310,26 +310,27 @@ with open('./ap_88_89/topics_title', 'r') as f_topics:
     print(parse_topics([f_topics]))
 
 
-# ### Task 1: Implement and compare lexical IR methods [40 points] ### 
+# ### Task 1: Implement and compare lexical IR methods [35 points] ### 
 # 
 # In this task you will implement a number of lexical methods for IR using the **Pyndri** framework. Then you will evaluate these methods on the dataset we have provided using **TREC Eval**.
 # 
 # Use the **Pyndri** framework to get statistics of the documents (term frequency, document frequency, collection frequency; **you are not allowed to use the query functionality of Pyndri**) and implement the following scoring methods in **Python**:
 # 
-# - [TF-IDF](http://nlp.stanford.edu/IR-book/html/htmledition/tf-idf-weighting-1.html). **[5 points]**
+# - [TF-IDF](http://nlp.stanford.edu/IR-book/html/htmledition/tf-idf-weighting-1.html) and 
 # - [BM25](http://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html) with k1=1.2 and b=0.75. **[5 points]**
 # - Language models ([survey](https://drive.google.com/file/d/0B-zklbckv9CHc0c3b245UW90NE0/view))
-#     - Jelinek-Mercer (explore different values of 𝛌 in the range [0.1, 0.5, 0.9]). **[10 points]**
+#     - Jelinek-Mercer (explore different values of 𝛌 in the range [0.1, 0.5, 0.9]). **[5 points]**
 #     - Dirichlet Prior (explore different values of 𝛍 [500, 1000, 1500]). **[5 points]**
 #     - Absolute discounting (explore different values of 𝛅 in the range [0.1, 0.5, 0.9]). **[5 points]**
+#     - [Positional Language Models](http://sifaka.cs.uiuc.edu/~ylv2/pub/sigir09-plm.pdf) define a language model for each position of a document, and score a document based on the scores of its PLMs. The PLM is estimated based on propagated counts of words within a document through a proximity-based density function, which both captures proximity heuristics and achieves an effect of “soft” passage retrieval. Implement the PLM, all five kernels, but only the Best position strategy to score documents. Use 𝛔 equal to 50, and Dirichlet smoothing with 𝛍 optimized on the validation set (decide how to optimize this value yourself and motivate your decision in the report). **[10 points]**
 #     
 # Implement the above methods and report evaluation measures (on the test set) using the hyper parameter values you optimized on the validation set (also report the values of the hyper parameters). Use TREC Eval to obtain the results and report on `NDCG@10`, Mean Average Precision (`MAP@1000`), `Precision@5` and `Recall@1000`.
 # 
 # For the language models, create plots showing `NDCG@10` with varying values of the parameters. You can do this by chaining small scripts using shell scripting (preferred) or execute trec_eval using Python's `subprocess`.
 # 
-# Compute significance of the results using a [two-tailed paired Student t-test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_rel.html) **[10 points]**. Be wary of false rejection of the null hypothesis caused by the [multiple comparisons problem](https://en.wikipedia.org/wiki/Multiple_comparisons_problem). There are multiple ways to mitigate this problem and it is up to you to choose one.
+# Compute significance of the results using a [two-tailed paired Student t-test](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_rel.html) **[5 points]**. Be wary of false rejection of the null hypothesis caused by the [multiple comparisons problem](https://en.wikipedia.org/wiki/Multiple_comparisons_problem). There are multiple ways to mitigate this problem and it is up to you to choose one.
 # 
-# Analyse the results by identifying specific queries where different methods succeed or fail and discuss possible reasons that cause these differences. This is *very important* in order to understand how the different retrieval functions behave.
+# Analyse the results by identifying specific queries where different methods succeed or fail and discuss possible reasons that cause these differences. This is *very important* in order to understand who the different retrieval functions behave.
 # 
 # **NOTE**: Don’t forget to use log computations in your calculations to avoid underflows. 
 
@@ -447,7 +448,7 @@ def run_retrieval(model_name, score_fn):
             max_objects_per_query=1000)
 
 
-# In[44]:
+# In[56]:
 
 
 import numpy as np
@@ -461,12 +462,12 @@ def tfidf(int_document_id, query_id):
     
     score = 0
     for query_term_id in tokenized_queries[query_id]:
-        if int_document_id in inverted_index[query_term_id]: 
-            document_term_freq = inverted_index[query_term_id][int_document_id]
-            tf = document_term_freq/document_lengths[int_document_id]
-            df = len(inverted_index[query_term_id])
-            idf = num_documents/df
-            score += np.log(1 + tf) * np.log(idf)
+        # can rewrite this to skip going over documents not containing query term
+        document_term_freq = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
+        tf = document_term_freq/document_lengths[int_document_id]
+        df = len(inverted_index[query_term_id])
+        idf = num_documents/df
+        score += np.log(1 + tf) * np.log(idf)
             
     return score
 
@@ -477,7 +478,7 @@ run_retrieval('tfidf', tfidf)
 # TODO implement tools to help you with the analysis of the results.
 
 
-# In[48]:
+# In[57]:
 
 
 def bm25(int_document_id, query_id):
@@ -487,26 +488,29 @@ def bm25(int_document_id, query_id):
     k3=1.6
     score = 0
     
+    # decide whether to go over set or not
     for query_term_id in set(tokenized_queries[query_id]):
-        if int_document_id in inverted_index[query_term_id]: 
+        td_td = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
+            # IMPORTANT OLD VERSION! DO NOT REMOVE!
 #             document_term_freq = inverted_index[query_term_id][int_document_id]
 #             tf_td = document_term_freq/Ld
             
-            Ld = document_lengths[int_document_id]
-            Lavg = avg_doc_length
-            
-            tf_td = inverted_index[query_term_id][int_document_id]
-            
-            df = len(inverted_index[query_term_id])
-            idf = num_documents/df
-            
-            tf_tq = query_term_counts[query_id][query_term_id]
-            
-            first_term = np.log(idf)
-            second_term = ((k1+1)*tf_td)/(k1*((1-b)+b*(Ld/avg_doc_length))+tf_td)
-            third_term = (k3+1)*tf_tq/(k3+tf_tq)
-            
-            score += first_term * second_term * third_term
+        Ld = document_lengths[int_document_id]
+        Lavg = avg_doc_length
+
+        tf_td = inverted_index[query_term_id][int_document_id]
+
+        df = len(inverted_index[query_term_id])
+        idf = num_documents/df
+
+        tf_tq = query_term_counts[query_id][query_term_id]
+
+        first_term = np.log(idf)
+        second_term = ((k1+1)*tf_td)/(k1*((1-b)+b*(Ld/avg_doc_length))+tf_td)
+        # decide whether to use third term
+#             third_term = (k3+1)*tf_tq/(k3+tf_tq)
+
+        score += first_term * second_term # * third_term
     
     
     return score
@@ -514,19 +518,19 @@ def bm25(int_document_id, query_id):
 run_retrieval('bm25', bm25)
 
 
-# In[ ]:
+# In[58]:
 
 
 import functools
 
-def jelinek_mercer(int_document_id, query_id, lambd=0.1):
+def jelinek_mercer(int_document_id, query_id, lambd):
     
     score = 0
     for query_term_id in set(tokenized_queries[query_id]):
         if int_document_id in inverted_index[query_term_id]:
             # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
             # basically, just a model with unigram probability
-            tf = inverted_index[query_term_id][int_document_id]
+            tf = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
             doc_len = document_lengths[int_document_id] 
             
             first_term = lambd * tf/doc_len
@@ -539,6 +543,56 @@ def jelinek_mercer(int_document_id, query_id, lambd=0.1):
 for lambd_val in [0.1, 0.5, 0.9]:
     jel_merc_func = functools.partial(jelinek_mercer, lambd = lambd_val)
     run_retrieval('jelinek-mercer', jel_merc_func)
+
+
+# In[60]:
+
+
+def dirichlet_prior(int_document_id, query_id, mu):
+    score = 0
+    for query_term_id in set(tokenized_queries[query_id]):
+        if int_document_id in inverted_index[query_term_id]:
+            # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
+            # basically, just a model with unigram probability
+            tf = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
+                    
+            prob = collection_frequencies[query_term_id]/total_terms
+            doc_len = document_lengths[int_document_id] 
+            
+            score += (tf+mu*prob)/(doc_len + mu)
+    
+    return score
+
+for mu_val in [0.1, 0.5, 0.9]:
+    dir_prior_func = functools.partial(dirichlet_prior, mu=mu_val)
+    run_retrieval('dirichlet prior', dir_prior_func)
+
+
+# In[62]:
+
+
+def abs_discount(int_document_id, query_id, delta):
+    score = 0
+    for query_term_id in set(tokenized_queries[query_id]):
+        if int_document_id in inverted_index[query_term_id]:
+            # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
+            # basically, just a model with unigram probability
+            tf = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0 
+                    
+            prob = collection_frequencies[query_term_id]/total_terms
+            doc_len = document_lengths[int_document_id] 
+            doc_unique_len = unique_terms_per_document[int_document_id]
+            
+            first_term = np.max(tf - delta, 0)
+            second_term = delta*doc_unique_len*prob/doc_len
+            
+            score += first_term + second_term
+    
+    return score
+
+for delta_val in [0.1, 0.5, 0.9]:
+    abs_discount_func = functools.partial(abs_discount, delta=delta_val)
+    run_retrieval('absolute discounting', abs_discount_func)
 
 
 # ### Task 2: Latent Semantic Models (LSMs) [20 points] ###

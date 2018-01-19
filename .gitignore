@@ -1,8 +1,11 @@
 # Byte-compiled / optimized / DLL files
+**/reduced_vectors_google.txt
+**/trec_eval
+**/.DS_Store
 __pycache__/
 *.py[cod]
 *$py.class
-
+**/.idea
 # C extensions
 *.so
 

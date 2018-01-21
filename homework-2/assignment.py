@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[ ]:
+# In[4]:
 
 
 # IMPORTANT OLD VERSION!! DON'T DELETE!
@@ -96,7 +96,7 @@
 #    
 # For example, say we have two queries: `Q1` and `Q2` and we rank three documents (`DOC1`, `DOC2`, `DOC3`). For query `Q1`, we find the following similarity scores `score(Q1, DOC1) = 1.0`, `score(Q1, DOC2) = 0.5`, `score(Q1, DOC3) = 0.75`; and for `Q2`: `score(Q2, DOC1) = -0.1`, `score(Q2, DOC2) = 1.25`, `score(Q1, DOC3) = 0.0`. We can generate run using the following snippet:
 
-# In[12]:
+# In[5]:
 
 
 import logging
@@ -184,7 +184,7 @@ write_run(
 # 
 # First we read the document collection index with Pyndri:
 
-# In[13]:
+# In[6]:
 
 
 import pyndri
@@ -196,7 +196,7 @@ index = pyndri.Index('index/')
 # 
 # First let's look at the number of documents, since Pyndri indexes the documents using incremental identifiers we can simply take the lowest index and the maximum document and consider the difference:
 
-# In[14]:
+# In[7]:
 
 
 print("There are %d documents in this collection." % (index.maximum_document() - index.document_base()))
@@ -204,7 +204,7 @@ print("There are %d documents in this collection." % (index.maximum_document() -
 
 # Let's take the first document out of the collection and take a look at it:
 
-# In[15]:
+# In[8]:
 
 
 example_document = index.document(index.document_base())
@@ -215,7 +215,7 @@ print(example_document)
 # 
 # To see what some ids and their matching tokens we take a look at the dictionary of the index:
 
-# In[16]:
+# In[9]:
 
 
 token2id, id2token, _ = index.get_dictionary()
@@ -224,7 +224,7 @@ print(list(id2token.items())[:15])
 
 # Using this dictionary we can see the tokens for the (non-stop) words in our example document:
 
-# In[17]:
+# In[10]:
 
 
 print([id2token[word_id] for word_id in example_document[1] if word_id > 0])
@@ -232,7 +232,7 @@ print([id2token[word_id] for word_id in example_document[1] if word_id > 0])
 
 # The reverse can also be done, say we want to look for news about the "University of Massachusetts", the tokens of that query can be converted to ids using the reverse dictionary:
 
-# In[18]:
+# In[11]:
 
 
 query_tokens = index.tokenize("University of Massachusetts")
@@ -245,7 +245,7 @@ print("Query by ids without stopwords:", query_id_tokens)
 
 # Naturally we can now match the document and query in the id space, let's see how often a word from the query occurs in our example document:
 
-# In[19]:
+# In[12]:
 
 
 matching_words = sum([True for word_id in example_document[1] if word_id in query_id_tokens])
@@ -260,7 +260,7 @@ print("Document %s and query \"%s\" have a %.01f%% overlap." % (example_document
 # ### Parsing the query file
 # You can parse the query file (`ap_88_89/topics_title`) using the following snippet:
 
-# In[20]:
+# In[13]:
 
 
 import collections
@@ -336,15 +336,16 @@ with open('./ap_88_89/topics_title', 'r') as f_topics:
 
 # **IMPORTANT**: You should structure your code around the helper functions we provide below.
 
-# In[34]:
+# In[14]:
 
 
-from collections import Counter
+import time
+
 with open('./ap_88_89/topics_title', 'r') as f_topics:
     queries = parse_topics([f_topics])
 
 index = pyndri.Index('index/')
-
+start_time = time.time()
 num_documents = index.maximum_document() - index.document_base()
 
 dictionary = pyndri.extract_dictionary(index)
@@ -356,7 +357,7 @@ tokenized_queries = {
     for query_id, query_string in queries.items()}
 #TODO: Explain why we need it
 query_term_counts = {
-    query_id: Counter(query_terms) 
+    query_id: collections.Counter(query_terms) 
     for query_id, query_terms in tokenized_queries.items()}
 
 query_term_ids = set(
@@ -372,43 +373,57 @@ document_lengths = {}
 unique_terms_per_document = {}
 
 inverted_index = collections.defaultdict(dict)
+inverted_index_positions = collections.defaultdict(dict)
 collection_frequencies = collections.defaultdict(int)
 
 total_terms = 0
 
 for int_doc_id in range(index.document_base(), index.maximum_document()):
-    ext_doc_id, doc_token_ids = index.document(int_doc_id)
+    # CHECK IF WE CAN DO THAT
+    if len(index.document(int_doc_id)) > 0:
+        ext_doc_id, doc_token_ids = index.document(int_doc_id)
 
-    document_bow = collections.Counter(
-        token_id for token_id in doc_token_ids
-        if token_id > 0)
-    document_length = sum(document_bow.values())
+        document_bow = collections.Counter(
+            token_id for token_id in doc_token_ids
+            if token_id > 0)
 
-    document_lengths[int_doc_id] = document_length
-    total_terms += document_length
+        token_positions = collections.defaultdict(list)
 
-    unique_terms_per_document[int_doc_id] = len(document_bow)
+        # Check with the TAs if we can change that
+        [token_positions[token_id].append(i) for i, token_id in enumerate(doc_token_ids)]
 
-    for query_term_id in query_term_ids:
-        assert query_term_id is not None
+        document_length = sum(document_bow.values())
 
-        document_term_frequency = document_bow.get(query_term_id, 0)
+        document_lengths[int_doc_id] = document_length
+        total_terms += document_length
 
-        if document_term_frequency == 0:
-            continue
+        unique_terms_per_document[int_doc_id] = len(document_bow)
 
-        collection_frequencies[query_term_id] += document_term_frequency
-        inverted_index[query_term_id][int_doc_id] = document_term_frequency
+        for query_term_id in query_term_ids:
+            assert query_term_id is not None
+
+            document_term_frequency = document_bow.get(query_term_id, 0)
+
+            if document_term_frequency == 0:
+                continue
+
+            collection_frequencies[query_term_id] += document_term_frequency
+            inverted_index[query_term_id][int_doc_id] = document_term_frequency
+            inverted_index_positions[query_term_id][int_doc_id] = token_positions[query_term_id]
 
 avg_doc_length = total_terms / num_documents
 
 print('Inverted index creation took', time.time() - start_time, 'seconds.')
 
 
-# In[43]:
+# In[15]:
 
 
-from collections import defaultdict
+inverted_index_positions
+
+
+# In[16]:
+
 
 def run_retrieval(model_name, score_fn):
     """
@@ -448,7 +463,7 @@ def run_retrieval(model_name, score_fn):
             max_objects_per_query=1000)
 
 
-# In[56]:
+# In[27]:
 
 
 import numpy as np
@@ -463,11 +478,12 @@ def tfidf(int_document_id, query_id):
     score = 0
     for query_term_id in tokenized_queries[query_id]:
         # can rewrite this to skip going over documents not containing query term
-        document_term_freq = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
-        tf = document_term_freq/document_lengths[int_document_id]
-        df = len(inverted_index[query_term_id])
-        idf = num_documents/df
-        score += np.log(1 + tf) * np.log(idf)
+        if int_document_id in inverted_index[query_term_id]:
+            document_term_freq = inverted_index[query_term_id][int_document_id]
+            tf = document_term_freq/document_lengths[int_document_id]
+            df = len(inverted_index[query_term_id])
+            idf = num_documents/df
+            score += np.log(1 + tf) * np.log(idf)
             
     return score
 
@@ -478,7 +494,7 @@ run_retrieval('tfidf', tfidf)
 # TODO implement tools to help you with the analysis of the results.
 
 
-# In[57]:
+# In[28]:
 
 
 def bm25(int_document_id, query_id):
@@ -490,27 +506,28 @@ def bm25(int_document_id, query_id):
     
     # decide whether to go over set or not
     for query_term_id in set(tokenized_queries[query_id]):
-        td_td = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
+        if int_document_id in inverted_index[query_term_id]:
+            tf_td = inverted_index[query_term_id][int_document_id]
             # IMPORTANT OLD VERSION! DO NOT REMOVE!
 #             document_term_freq = inverted_index[query_term_id][int_document_id]
 #             tf_td = document_term_freq/Ld
             
-        Ld = document_lengths[int_document_id]
-        Lavg = avg_doc_length
+            Ld = document_lengths[int_document_id]
+            Lavg = avg_doc_length
 
-        tf_td = inverted_index[query_term_id][int_document_id]
+            tf_td = inverted_index[query_term_id][int_document_id]
 
-        df = len(inverted_index[query_term_id])
-        idf = num_documents/df
+            df = len(inverted_index[query_term_id])
+            idf = num_documents/df
 
-        tf_tq = query_term_counts[query_id][query_term_id]
+            tf_tq = query_term_counts[query_id][query_term_id]
 
-        first_term = np.log(idf)
-        second_term = ((k1+1)*tf_td)/(k1*((1-b)+b*(Ld/avg_doc_length))+tf_td)
-        # decide whether to use third term
-#             third_term = (k3+1)*tf_tq/(k3+tf_tq)
+            first_term = np.log(idf)
+            second_term = ((k1+1)*tf_td)/(k1*((1-b)+b*(Ld/avg_doc_length))+tf_td)
+            # decide whether to use third term
+        #             third_term = (k3+1)*tf_tq/(k3+tf_tq)
 
-        score += first_term * second_term # * third_term
+            score += first_term * second_term # * third_term
     
     
     return score
@@ -518,7 +535,7 @@ def bm25(int_document_id, query_id):
 run_retrieval('bm25', bm25)
 
 
-# In[58]:
+# In[3]:
 
 
 import functools
@@ -526,17 +543,17 @@ import functools
 def jelinek_mercer(int_document_id, query_id, lambd):
     
     score = 0
-    for query_term_id in set(tokenized_queries[query_id]):
-        if int_document_id in inverted_index[query_term_id]:
-            # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
-            # basically, just a model with unigram probability
-            tf = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
-            doc_len = document_lengths[int_document_id] 
-            
-            first_term = lambd * tf/doc_len
-            second_term = (1 - lambd) * collection_frequencies[query_term_id]/total_terms
-            
-            score += first_term * second_term
+    for query_term_id in tokenized_queries[query_id]:
+#         if int_document_id in inverted_index[query_term_id]:
+        # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
+        # basically, just a model with unigram probability
+        tf = inverted_index[query_term_id].get(int_document_id, 0)
+        doc_len = document_lengths[int_document_id] 
+
+        first_term = lambd * tf/doc_len
+        second_term = (1 - lambd) * collection_frequencies[query_term_id]/total_terms
+
+        score += first_term * second_term
             
     return score
 
@@ -545,21 +562,21 @@ for lambd_val in [0.1, 0.5, 0.9]:
     run_retrieval('jelinek-mercer', jel_merc_func)
 
 
-# In[60]:
+# In[1]:
 
 
 def dirichlet_prior(int_document_id, query_id, mu):
     score = 0
-    for query_term_id in set(tokenized_queries[query_id]):
-        if int_document_id in inverted_index[query_term_id]:
+    for query_term_id in tokenized_queries[query_id]:
+#         if int_document_id in inverted_index[query_term_id]:
             # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
             # basically, just a model with unigram probability
-            tf = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0
+        tf = inverted_index[query_term_id].get(int_document_id, 0)
                     
-            prob = collection_frequencies[query_term_id]/total_terms
-            doc_len = document_lengths[int_document_id] 
-            
-            score += (tf+mu*prob)/(doc_len + mu)
+        prob = collection_frequencies[query_term_id]/total_terms
+        doc_len = document_lengths[int_document_id] 
+
+        score += (tf+mu*prob)/(doc_len + mu)
     
     return score
 
@@ -568,31 +585,100 @@ for mu_val in [0.1, 0.5, 0.9]:
     run_retrieval('dirichlet prior', dir_prior_func)
 
 
-# In[62]:
+# In[2]:
 
 
 def abs_discount(int_document_id, query_id, delta):
     score = 0
-    for query_term_id in set(tokenized_queries[query_id]):
-        if int_document_id in inverted_index[query_term_id]:
+    for query_term_id in tokenized_queries[query_id]:
+#         if int_document_id in inverted_index[query_term_id]:
             # Don't need to divide by len, because already doing that in interpolation (check NLP-1)
             # basically, just a model with unigram probability
-            tf = inverted_index[query_term_id][int_document_id]                            if int_document_id in inverted_index[query_term_id]                            else 0 
-                    
-            prob = collection_frequencies[query_term_id]/total_terms
-            doc_len = document_lengths[int_document_id] 
-            doc_unique_len = unique_terms_per_document[int_document_id]
-            
-            first_term = np.max(tf - delta, 0)
-            second_term = delta*doc_unique_len*prob/doc_len
-            
-            score += first_term + second_term
+        tf = inverted_index[query_term_id].get(int_document_id, 0)
+
+        prob = collection_frequencies[query_term_id]/total_terms
+        doc_len = document_lengths[int_document_id] 
+        doc_unique_len = unique_terms_per_document[int_document_id]
+
+        first_term = np.max(tf - delta, 0)
+        second_term = delta*doc_unique_len*prob/doc_len
+
+        score += first_term + second_term
     
     return score
 
 for delta_val in [0.1, 0.5, 0.9]:
     abs_discount_func = functools.partial(abs_discount, delta=delta_val)
     run_retrieval('absolute discounting', abs_discount_func)
+
+
+# In[17]:
+
+
+def gauss_kernel(i, j, sigma=50):
+    kernel_val = np.exp(-np.pow(i-j, 2)/(2*np.pow(sigma,2)))
+    return kernel_val
+
+def gauss_kernel_integral(i, j, sigma=50):
+    pass
+
+def triangle_kernel(i, j, sigma=50):
+    kernel_val = 1-np.abs(i-j)/sigma if np.abs(i-j)<=sigma else 0
+    return kernel_val
+
+def triangle_kernel_integral(i, j, sigma=50):
+    pass
+
+def cosine_kernel(i, j, sigma=50):
+    kernel_val = 1/2 * (1+np.cos(np.abs(i-j)*np.pi/sigma))        if np.abs(i - j)<=sigma        else 0
+    return kernel_val
+
+def cosine_kernel_integral(i, j, sigma=50):
+    pass
+
+def circle_kernel(i, j, sigma=50):
+    kernel_val = np.sqrt(1-np.pow(np.abs(i-j)/sigma,2))        if np.abs(i - j)<=sigma        else 0
+    return kernel_val
+
+def circle_kernel_integral(i, j, sigma=50):
+    pass
+
+def passage_kernel(i, j, sigma=50):
+    kernel_val = 1 if np.abs(i - j)<=sigma else 0
+    return kernel_val
+
+def passage_kernel_integral(i, j, sigma=50):
+    pass
+
+
+# In[20]:
+
+
+document_lengths[1]
+
+
+# In[23]:
+
+
+def positional_language_model(int_document_id, query_id, kernel, mu=0.1):
+    all_scores = np.zeros(document_lengths(int_document_id))
+    
+    for query_term_id in tokenized_queries[query_id]:    
+        if int_document_id in inverted_index_positions[query_term_id]:
+            for i in range(document_lengths(int_document_id)):
+                term_score = 0
+                score = 0
+                for query_term_pos in inverted_index_positions[query_term_id]:
+                    term_score += kernel(i, query_term_pos)
+                    
+                prob = collection_frequencies[query_term_id]/total_terms
+                doc_len = document_lengths[int_document_id] 
+
+                score = (term_score+mu*prob)/(norm_value + mu)
+                
+                all_scores[i] += score
+    score = np.max(all_scores)
+    return score
 
 
 # ### Task 2: Latent Semantic Models (LSMs) [20 points] ###

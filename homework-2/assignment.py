@@ -480,7 +480,7 @@ def tfidf(int_document_id, query_id):
         # can rewrite this to skip going over documents not containing query term
         if int_document_id in inverted_index[query_term_id]:
             document_term_freq = inverted_index[query_term_id][int_document_id]
-            tf = document_term_freq/document_lengths[int_document_id]
+            tf = document_term_freq#/document_lengths[int_document_id]
             df = len(inverted_index[query_term_id])
             idf = num_documents/df
             score += np.log(1 + tf) * np.log(idf)

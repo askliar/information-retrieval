@@ -31,6 +31,9 @@ if CUDA:
     torch.LongTensor = torch.cuda.LongTensor
     torch.ByteTensor = torch.cuda.ByteTensor
 
+if not os.path.exists('saved'):
+    os.makedirs('saved')
+
 
 class NVSM(nn.Module):
     def __init__(self, documents, t2i, i2t, embeddings, document_emb_size, word_emb_size, batch_size,
@@ -139,20 +142,22 @@ class NVSM(nn.Module):
             else:
                 out = torch.cat([out, log_p_wave])
         # add RV
-        loss = 1 / self.batch_size * torch.sum(out) + self.lamb / (2 * self.m) * (torch.sum(self.rd) + torch.sum(self.rv) + torch.sum(self.proj))
+        loss = 1 / self.batch_size * torch.sum(out) + self.lamb / (2 * self.m) * (
+            torch.sum(self.rd) + torch.sum(self.rv) + torch.sum(self.proj))
         return loss
 
     def score(self, document_id, query):
-    	if CUDA:
-    		query_token_ids = Variable(torch.LongTensor([t2i(word) for word in query]).cuda(), requires_grad=False)
-    	else:
-    		query_token_ids = Variable(torch.LongTensor([t2i(word) for word in query]), requires_grad=False)
+        if CUDA:
+            query_token_ids = Variable(torch.LongTensor([t2i(word) for word in query]).cuda(), requires_grad=False)
+        else:
+            query_token_ids = Variable(torch.LongTensor([t2i(word) for word in query]), requires_grad=False)
 
-    	words = self.rv.index_select(1, query_token_ids)
-    	words_processed = self.g(words)
-    	words_proj = self.f(words_processed)
-    	document_proj = self.rd[:, document_id]
-    	return F.cosine_similarity(words_proj, document_proj)
+        words = self.rv.index_select(1, query_token_ids)
+        words_processed = self.g(words)
+        words_proj = self.f(words_processed)
+        document_proj = self.rd[:, document_id]
+        return F.cosine_similarity(words_proj, document_proj)
+
 
 def train_word2vec(iterations):
     word2vec_init = gensim.models.Word2Vec(
@@ -177,30 +182,33 @@ def train_word2vec(iterations):
 
         for epoch in range(iterations):
             start_time = time.time()
-            print('Epoch {} started..'.format(epoch+1))
+            print('Epoch {} started..'.format(epoch + 1))
 
             model = copy.deepcopy(models[-1])
             model.train(sentences, total_examples=len(sentences), epochs=model.iter)
 
             models.append(model)
-            print('Epoch {} finished in {}'.format(epoch+1, time.time()-start_time))
+            print('Epoch {} finished in {}'.format(epoch + 1, time.time() - start_time))
     return models[-1]
 
-model = train_word2vec(15)
-pickle.dump(model, open('model.pkl', 'wb'))
 
+if os.path.exists('saved/model.pkl'):
+    model = pickle.load(open('saved/model.pkl', 'rb'))
+else:
+    model = train_word2vec(15)
+    pickle.dump(model, open('saved/model.pkl', 'wb'))
 
 index = pyndri.Index('index/')
 
-if os.path.exists('t2i.pkl') and os.path.exists('i2t.pkl') \
-        and os.path.exists('documents.pkl') and os.path.exists('word_vectors.pkl'):
-    documents = pickle.load(open('documents.pkl', 'rb'))
-    t2i = pickle.load(open('t2i.pkl', 'rb'))
-    i2t = pickle.load(open('i2t.pkl', 'rb'))
-    word_vectors = pickle.load(open('word_vectors.pkl', 'rb'))
+if os.path.exists('saved/t2i.pkl') and os.path.exists('saved/i2t.pkl') \
+        and os.path.exists('saved/documents.pkl') and os.path.exists('saved/word_vectors.pkl'):
+    documents = pickle.load(open('saved/documents.pkl', 'rb'))
+    t2i = pickle.load(open('saved/t2i.pkl', 'rb'))
+    i2t = pickle.load(open('saved/i2t.pkl', 'rb'))
+    word_vectors = pickle.load(open('saved/word_vectors.pkl', 'rb'))
 else:
     dictionary = pyndri.extract_dictionary(index)
-    word_vectors = KeyedVectors.load_word2vec_format('reduced_vectors_google.txt')
+    word_vectors = KeyedVectors.load_word2vec_format('saved/reduced_vectors_google.txt')
     documents = []
     t2i = collections.defaultdict(lambda: len(t2i))
     i2t = {}
@@ -215,7 +223,7 @@ else:
         if len(proc_doc) > n_gram:
             documents.append(proc_doc)
 
-        # C binary format
+            # C binary format
     for word in t2i:
         if word not in word_vectors.vocab:
             print(word)
@@ -223,11 +231,11 @@ else:
     t2i = dict(t2i)
     i2t = dict(i2t)
 
-    pickle.dump(documents, open('documents.pkl', 'wb'))
+    pickle.dump(documents, open('saved/documents.pkl', 'wb'))
     documents = documents[:1000]
-    pickle.dump(t2i, open('t2i.pkl', 'wb'))
-    pickle.dump(i2t, open('i2t.pkl', 'wb'))
-    pickle.dump(word_vectors, open('word_vectors.pkl', 'wb'))
+    pickle.dump(t2i, open('saved/t2i.pkl', 'wb'))
+    pickle.dump(i2t, open('saved/i2t.pkl', 'wb'))
+    pickle.dump(word_vectors, open('saved/word_vectors.pkl', 'wb'))
 
 # print(sum([len(document) for document in documents]))
 
@@ -261,7 +269,7 @@ for i in range(epochs):
     print('Loss is: {}'.format(loss.data[0]))
     losses.append(loss.data[0])
     # print('Average loss is: {}'.format(total_loss/(i+1)))
-    print('Time for epoch, ', i+1, ' is: {}'.format(time.time() - start_time))
+    print('Time for epoch, ', i + 1, ' is: {}'.format(time.time() - start_time))
     torch.save(model, 'model.pth.tar')
 
 print(losses)

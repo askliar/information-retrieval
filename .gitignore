@@ -1,6 +1,8 @@
 # Byte-compiled / optimized / DLL files
 **/reduced_vectors_google.txt
 **/trec_eval
+**/saved
+*.pkl
 **/.DS_Store
 __pycache__/
 *.py[cod]

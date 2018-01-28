@@ -16,9 +16,9 @@ import pickle
 import os
 
 CUDA = cuda.is_available()
-epochs = 5
-n_gram = 5
-num_batches = 100
+epochs = 15
+n_gram = 10
+num_batches = 139
 
 if CUDA:
     torch.FloatTensor = torch.cuda.FloatTensor
@@ -70,7 +70,7 @@ class NVSM(nn.Module):
         return F.hardtanh((x - mean) / torch.sqrt(std) + self.beta.view(-1))
 
     def p(self, x, doc):
-        return F.sigmoid(x @ doc)
+        return torch.clamp(F.sigmoid(x @ doc), -0.999, 0.999)
 
     def sample_batch(self):
         for i in range(self.batch_size):
@@ -80,7 +80,7 @@ class NVSM(nn.Module):
                 sample_doc_idx_var = sample_doc_idx_var.cuda()
             sample_doc = documents[sample_doc_idx]
             sample_doc_emb = self.rd.index_select(1, sample_doc_idx_var)
-            sample_word_idx = int(torch.rand(1)[0] * (len(sample_doc) - 6))
+            sample_word_idx = max(int(torch.rand(1)[0] * (len(sample_doc) - self.n_gram - 1)), 0)
             sample_word_ids = Variable(torch.LongTensor(sample_doc[sample_word_idx:sample_word_idx + self.n_gram]),
                                        requires_grad=False)
             if CUDA:
@@ -126,9 +126,18 @@ class NVSM(nn.Module):
             if CUDA:
                 nsample_indices = nsample_indices.cuda()
             nsample_documents = self.rd.index_select(1, nsample_indices)
+
             a = 1 - self.p(t.view(1, -1), nsample_documents)
-            print(a, torch.log(a), torch.sum(torch.log(a)))
-            nsample_log = torch.sum(torch.log(1 - self.p(t.view(1, -1), nsample_documents)))
+            # print(a)
+            b = torch.log(a)
+            # print(b)
+            pp = float('inf')
+            if float('inf') in b.data[0]:
+                print('weeee')
+            c = torch.sum(b)
+            # print(c)
+
+            nsample_log = c
             log_p_wave = (self.z + 1) / (2 * self.z) * (log_p + nsample_log)
             if i == 0:
                 out = log_p_wave
@@ -177,7 +186,7 @@ index = pyndri.Index('index/')
 if os.path.exists('t2i.pkl') and os.path.exists('i2t.pkl') \
         and os.path.exists('documents.pkl') and os.path.exists('word_vectors.pkl'):
     documents = pickle.load(open('documents.pkl', 'rb'))
-    documents = documents[:1000]
+    # documents = documents[:10000]
     t2i = pickle.load(open('t2i.pkl', 'rb'))
     i2t = pickle.load(open('i2t.pkl', 'rb'))
     word_vectors = pickle.load(open('word_vectors.pkl', 'rb'))
@@ -191,7 +200,7 @@ else:
     t2i = collections.defaultdict(lambda: len(t2i))
     i2t = {}
 
-    for doc_idx in range(index.document_base(), index.maximum_document()):
+    for doc_idx in range(index.document_base(), index.document_base() + 10000):
         document_id, document = index.document(doc_idx)
         proc_doc = []
         for word_id in document:
@@ -210,39 +219,44 @@ else:
     i2t = dict(i2t)
 
     pickle.dump(documents, open('documents.pkl', 'wb'))
+    documents = documents[:1000]
     pickle.dump(t2i, open('t2i.pkl', 'wb'))
     pickle.dump(i2t, open('i2t.pkl', 'wb'))
     pickle.dump(word_vectors, open('word_vectors.pkl', 'wb'))
 
+# print(sum([len(document) for document in documents]))
 
-
-
+# 228795
+#
 num_documents = index.maximum_document() - index.document_base()
 
-with torch.autograd.profiler.profile() as prof:
-    model = NVSM(documents, t2i, i2t, word_vectors, 300, 300, 256, n_gram, 10, 0.1, 10)
-    if CUDA:
-        model = model.cuda()
-    model.train()
+# with torch.autograd.profiler.profile() as prof:
+model = NVSM(documents, t2i, i2t, word_vectors, 256, 300, 1000, n_gram, 10, 0.01, 10)
+if CUDA:
+    model = model.cuda()
+model.train()
 
-    optimizer = optim.Adam(params=[model.proj, model.rd, model.beta])
+optimizer = optim.Adam(params=[model.proj, model.rd, model.beta])
 
-    total_loss = 0.0
-
-    for i in range(epochs):
-        loss = 0.0
-        start_time = time.time()
-        for batch in range(num_batches):
-            batch_start_time = time.time()
-            optimizer.zero_grad()
-            loss = model()
-            total_loss += loss.data[0]
-            loss += loss.data[0]
-            loss.backward()
-            optimizer.step()
-            print('Time for 1 batch is: {}'.format(time.time() - batch_start_time))
-            print(prof)
-        print('Loss is: {}'.format(loss))
-        print('Average loss is: {}'.format(total_loss/(i+1)))
-        print('Time for 1 epoch is: {}'.format(time.time() - start_time))
+total_loss = 0.0
+losses = []
+for i in range(epochs):
+    loss = 0.0
+    start_time = time.time()
+    for batch in range(num_batches):
+        batch_start_time = time.time()
+        optimizer.zero_grad()
+        loss = model()
+        total_loss += loss.data[0]
+        loss += loss.data[0]
+        loss.backward()
+        optimizer.step()
+        print('Time for 1 batch is: {}'.format(time.time() - batch_start_time))
+        # print(prof)
+    print('Loss is: {}'.format(loss.data[0]))
+    losses.append(loss.data[0])
+    # print('Average loss is: {}'.format(total_loss/(i+1)))
+    print('Time for epoch, ', i+1, ' is: {}'.format(time.time() - start_time))
 # model.forward()
+torch.save(model, 'model.pth.tar')
+print(losses)

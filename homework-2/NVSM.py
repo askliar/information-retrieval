@@ -262,5 +262,6 @@ for i in range(epochs):
     losses.append(loss.data[0])
     # print('Average loss is: {}'.format(total_loss/(i+1)))
     print('Time for epoch, ', i+1, ' is: {}'.format(time.time() - start_time))
-	torch.save(model, 'model.pth.tar')
+    torch.save(model, 'model.pth.tar')
+
 print(losses)

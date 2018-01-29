@@ -148,90 +148,65 @@ class NVSM(nn.Module):
         # + torch.sum(self.rv)
         return loss
 
+# index = pyndri.Index('index/')
+#
+# if os.path.exists('t2i.pkl') and os.path.exists('i2t.pkl') \
+#         and os.path.exists('documents.pkl') and os.path.exists('word_vectors.pkl'):
+#     documents = pickle.load(open('documents.pkl', 'rb'))
+#     # documents = documents[:10000]
+#     t2i = pickle.load(open('t2i.pkl', 'rb'))
+#     i2t = pickle.load(open('i2t.pkl', 'rb'))
+#     # word_vectors = pickle.load(open('word_vectors.pkl', 'rb'))
+# else:
+#     # with open('./ap_88_89/topics_title', 'r') as f_topics:
+#     #     queries = parse_topics([f_topics])
+#
+#     dictionary = pyndri.extract_dictionary(index)
+#     word_vectors = KeyedVectors.load_word2vec_format('reduced_vectors_google.txt')
+#     documents = []
+#     t2i = collections.defaultdict(lambda: len(t2i))
+#     i2t = {}
+#
+#     for doc_idx in range(index.document_base(), index.document_base() + 10000):
+#         document_id, document = index.document(doc_idx)
+#         proc_doc = []
+#         for word_id in document:
+#             if word_id > 0 and dictionary.id2token[word_id] in word_vectors.vocab:
+#                 i2t[t2i[dictionary.id2token[word_id]]] = dictionary.id2token[word_id]
+#                 proc_doc.append(t2i[dictionary.id2token[word_id]])
+#         if len(proc_doc) > n_gram:
+#             documents.append(proc_doc)
+#
+#         # C binary format
+#     for word in t2i:
+#         if word not in word_vectors.vocab:
+#             print(word)
+#
+#     t2i = dict(t2i)
+#     i2t = dict(i2t)
+#
+#     pickle.dump(documents, open('documents.pkl', 'wb'))
+#     pickle.dump(t2i, open('t2i.pkl', 'wb'))
+#     pickle.dump(i2t, open('i2t.pkl', 'wb'))
+#     # pickle.dump(word_vectors, open('word_vectors.pkl', 'wb'))
 
-# def parse_topics(file_or_files,
-#                  max_topics=sys.maxsize, delimiter=';'):
-#     assert max_topics >= 0 or max_topics is None
-#
-#     topics = collections.OrderedDict()
-#
-#     if not isinstance(file_or_files, list) and not isinstance(file_or_files, tuple):
-#         if hasattr(file_or_files, 'iter'):
-#             file_or_files = list(file_or_files)
-#         else:
-#             file_or_files = [file_or_files]
-#
-#         for f in file_or_files:
-#             assert isinstance(f, io.IOBase)
-#
-#             for line in f:
-#                 assert (isinstance(line, str))
-#
-#                 line = line.strip()
-#
-#                 if not line:
-#                     continue
-#
-#                 topic_id, terms = line.split(delimiter, 1)
-#
-#                 topics[topic_id] = terms
-#
-#                 if max_topics > 0 and len(topics) >= max_topics:
-#                     break
-#
-#         return topics
+# print(sum([len(document) for document in documents]))
 
-index = pyndri.Index('index/')
-
+# 228795
+#
 if os.path.exists('t2i.pkl') and os.path.exists('i2t.pkl') \
         and os.path.exists('documents.pkl') and os.path.exists('word_vectors.pkl'):
     documents = pickle.load(open('documents.pkl', 'rb'))
     # documents = documents[:10000]
     t2i = pickle.load(open('t2i.pkl', 'rb'))
     i2t = pickle.load(open('i2t.pkl', 'rb'))
-    word_vectors = pickle.load(open('word_vectors.pkl', 'rb'))
-else:
-    # with open('./ap_88_89/topics_title', 'r') as f_topics:
-    #     queries = parse_topics([f_topics])
+    word_vectors = pickle.load(open('model.pkl', 'rb'))
 
-    dictionary = pyndri.extract_dictionary(index)
-    word_vectors = KeyedVectors.load_word2vec_format('reduced_vectors_google.txt')
-    documents = []
-    t2i = collections.defaultdict(lambda: len(t2i))
-    i2t = {}
-
-    for doc_idx in range(index.document_base(), index.document_base() + 10000):
-        document_id, document = index.document(doc_idx)
-        proc_doc = []
-        for word_id in document:
-            if word_id > 0 and dictionary.id2token[word_id] in word_vectors.vocab:
-                i2t[t2i[dictionary.id2token[word_id]]] = dictionary.id2token[word_id]
-                proc_doc.append(t2i[dictionary.id2token[word_id]])
-        if len(proc_doc) > n_gram:
-            documents.append(proc_doc)
-
-        # C binary format
-    for word in t2i:
-        if word not in word_vectors.vocab:
-            print(word)
-
-    t2i = dict(t2i)
-    i2t = dict(i2t)
-
-    pickle.dump(documents, open('documents.pkl', 'wb'))
-    documents = documents[:1000]
-    pickle.dump(t2i, open('t2i.pkl', 'wb'))
-    pickle.dump(i2t, open('i2t.pkl', 'wb'))
-    pickle.dump(word_vectors, open('word_vectors.pkl', 'wb'))
-
-# print(sum([len(document) for document in documents]))
-
-# 228795
-#
-num_documents = index.maximum_document() - index.document_base()
+# num_documents = index.maximum_document() - index.document_base()
 
 # with torch.autograd.profiler.profile() as prof:
-model = NVSM(documents, t2i, i2t, word_vectors, 256, 300, 1000, n_gram, 10, 0.01, 10)
+model = NVSM(documents, t2i, i2t, word_vectors, 256, 300, 2000, n_gram, 10, 0.01, 10)
+
 if CUDA:
     model = model.cuda()
 model.train()
@@ -252,11 +227,8 @@ for i in range(epochs):
         loss.backward()
         optimizer.step()
         print('Time for 1 batch is: {}'.format(time.time() - batch_start_time))
-        # print(prof)
     print('Loss is: {}'.format(loss.data[0]))
     losses.append(loss.data[0])
-    # print('Average loss is: {}'.format(total_loss/(i+1)))
     print('Time for epoch, ', i+1, ' is: {}'.format(time.time() - start_time))
-# model.forward()
 torch.save(model, 'model.pth.tar')
 print(losses)

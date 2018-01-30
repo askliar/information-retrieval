@@ -11,14 +11,13 @@ from gensim.models import KeyedVectors
 from torch.autograd import Variable
 import torch.nn.functional as F
 import collections
-import pyndri
 import pickle
 import os
 
 CUDA = cuda.is_available()
 epochs = 15
 n_gram = 10
-num_batches = 139
+num_batches = 500
 
 if CUDA:
     torch.FloatTensor = torch.cuda.FloatTensor
@@ -121,30 +120,35 @@ class NVSM(nn.Module):
             t = self.t(t_tensor[:, i], mean, std)
             log_p = self.z * torch.log(
                 self.p(t, documents[i * self.document_emb_size:(i + 1) * self.document_emb_size]))
+            # print(log_p)
             # torch.sum([torch.log(1.0 - )]))
             nsample_indices = Variable((torch.rand(self.z) * self.num_documents).long(), requires_grad=False)
+            # print(nsample_indices)
             if CUDA:
                 nsample_indices = nsample_indices.cuda()
             nsample_documents = self.rd.index_select(1, nsample_indices)
+            # print(nsample_documents)
 
-            a = 1 - self.p(t.view(1, -1), nsample_documents)
+            # a = torch.sum(torch.log(1 - self.p(t.view(1, -1), nsample_documents)))
             # print(a)
-            b = torch.log(a)
-            # print(b)
-            pp = float('inf')
-            if float('inf') in b.data[0]:
-                print('weeee')
-            c = torch.sum(b)
+            # b = torch.log(a)
+            # # print(b)
+            # if float('-inf') in b.data[0]:
+            #     print('weeee')
+            # c = torch.sum(b)
             # print(c)
 
-            nsample_log = c
+            nsample_log = torch.sum(torch.log(torch.clamp(1 - self.p(t.view(1, -1), nsample_documents), min=0.01)))
+            # print(nsample_log)
             log_p_wave = (self.z + 1) / (2 * self.z) * (log_p + nsample_log)
+            # print(log_p_wave)
             if i == 0:
                 out = log_p_wave
             else:
                 out = torch.cat([out, log_p_wave])
         # add RV
         loss = 1 / self.batch_size * torch.sum(out) + self.lamb / (2 * self.batch_size) * (torch.sum(self.rd*self.rd) + torch.sum(self.proj*self.proj))
+        print(loss)
         # + torch.sum(self.rv)
         return loss
 
@@ -204,14 +208,18 @@ if os.path.exists('t2i.pkl') and os.path.exists('i2t.pkl') \
 
 # num_documents = index.maximum_document() - index.document_base()
 
-# with torch.autograd.profiler.profile() as prof:
-model = NVSM(documents, t2i, i2t, word_vectors, 256, 300, 2000, n_gram, 10, 0.01, 10)
-
+model = NVSM(documents, t2i, i2t, word_vectors, 256, 300, 2500, n_gram, 10, 0.01, 10)
 if CUDA:
     model = model.cuda()
+# with torch.autograd.profiler.profile() as prof:
+if os.path.exists('model.pth'):
+    model.load_state_dict(torch.load('model.pth'))
+
 model.train()
 
 optimizer = optim.Adam(params=[model.proj, model.rd, model.beta])
+if os.path.exists('optim.pth'):
+    optimizer.load_state_dict(torch.load('optim.pth'))
 
 total_loss = 0.0
 losses = []
@@ -227,8 +235,14 @@ for i in range(epochs):
         loss.backward()
         optimizer.step()
         print('Time for 1 batch is: {}'.format(time.time() - batch_start_time))
+        if batch % 50 == 0:
+            torch.save(model.state_dict(), 'model_e' + str(i) + '_b' + str(batch) + '.pth')
+            torch.save(optimizer.state_dict(), 'optim_e' + str(i) + '_b' + str(batch) + '.pth')
     print('Loss is: {}'.format(loss.data[0]))
     losses.append(loss.data[0])
     print('Time for epoch, ', i+1, ' is: {}'.format(time.time() - start_time))
-torch.save(model, 'model.pth.tar')
+    print(losses)
+    torch.save(model.state_dict(), 'model.pth')
+    torch.save(optimizer.state_dict(), 'optim.pth')
+
 print(losses)

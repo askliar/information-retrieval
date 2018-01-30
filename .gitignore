@@ -3,6 +3,8 @@
 **/trec_eval
 **/saved
 *.pkl
+*.pth.tar
+*.pd.pkl
 **/.DS_Store
 __pycache__/
 *.py[cod]

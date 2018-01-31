@@ -14,15 +14,15 @@ torch.manual_seed(32)
 def pairwise_dist2(x, y):
     y = y.view(1, -1)
     x = x.view(1, -1)
-    s = - y.expand(x.size(1), y.size(1))
+    s = -y.expand(x.size(1), y.size(1))
     s += x.expand(s.t().size()).t()
     return s
 
 
 def RankNetLoss(scores, rels, gamma):
     dist = pairwise_dist2(scores.t(), scores.t())
-    # logs = torch.log(1 + torch.exp(-gamma * dist))
-    logs = dist
+    logs = torch.log(1 + torch.exp(-gamma * dist))
+    # logs = dist
 
     mask = pairwise_dist2(rels, rels)
     mask = mask.clamp(min=0)
@@ -47,14 +47,16 @@ def RankNetLoss(scores, rels, gamma):
 class RankNet(nn.Module):
     def __init__(self, dim, hidden_size=1, use_cuda=True):
         super(RankNet, self).__init__()
-        self.fc1 = nn.Linear(dim, 1)
-        self.fc2 = nn.Linear(50, 1)
+        self.fc1 = nn.Linear(dim, 500)
+        # self.fc2 = nn.Linear(2500, 2500)
+        self.fc2 = nn.Linear(500, 1)
         self.use_cuda = use_cuda
 
     def forward(self, data):
         x = Variable(data)
         scores = self.fc1(x)
-        # scores = self.fc2(F.relu(scores))
+        scores = self.fc2(F.relu(scores))
+        # scores = self.fc3(F.relu(scores))
         return scores
 
 
@@ -80,13 +82,27 @@ def get_data(df, features):
         final_doc_ids.append(docs)
     # print(final_list[0], type(final_list[0]))
     # final_list[0]
-    tensor_list = [torch.from_numpy(x[:, features]).cuda() for x in final_list]
+    tensor_list = [(torch.from_numpy(x[:, features])).cuda() for x in final_list]
+
+    mean = torch.zeros(tensor_list[0].mean(0).size()).cuda()
+    std = torch.zeros(mean.size()).cuda()
+    tot = 0
+    for i in range(len(tensor_list)):
+        tot += tensor_list[i].size(0)
+        mean += tensor_list[i].sum(0)
+    mean = mean / tot
+    # tot = 0
+    for i in range(len(tensor_list)):
+        # tot += tensor_list[i].size(0)
+        std += ((tensor_list[i] - mean)*(tensor_list[i] - mean)).sum(0)
+    std = std / tot
+
     # print(tensor_list[0])
     rels = [torch.from_numpy(x).cuda() for x in final_rels]
     # print(rels[0])
-    indexes = [(torch.nonzero(x), torch.nonzero(1 - x)) for x in rels]
+    # indexes = [(torch.nonzero(x), torch.nonzero(1 - x)) for x in rels]
 
-    return tensor_list, rels, final_doc_ids, query_ids
+    return tensor_list, rels, mean, std, final_doc_ids, query_ids
 
 
 
@@ -137,7 +153,7 @@ def train(model, tensor_list, rels):
         loss = RankNetLoss(scores, rels[q], gamma=1) #/ len(tensor_list)
         ranking, indices = torch.sort(scores[:, 0], descending=True)
         if kk == 0:
-            print(indices)
+            # print(indices)
             kk += 1
     loss.backward()
     print('loss = ', loss.data[0])
@@ -170,7 +186,7 @@ def test(model, e, tensor_list, rels, doc_ids, query_ids):
         # predicted_rels = torch.round(ranking).clamp(min=0, max=1)
         predicted_ranking = rels[q][indices.data]
         # print(ranking[:5])
-        scores_list.append(ranking.data)
+        scores_list.append(scores.data[:, 0])
         # conf += confusion_matrix(predicted_rels.data, predicted_ranking)
     # print('loss test = ', loss.data[0])
     save_test_ranking(e, scores_list, doc_ids, query_ids)
@@ -202,9 +218,9 @@ top1000_data = top1000_data[top1000]
 
 # ---
 features = [i*10 for i in range(10)]
-tensor_list, rels, train_doc_ids, train_query_ids = get_data(train_data, features)
-test_list, test_rels, test_doc_ids, test_query_ids = get_data(test_data, features)
-top1000_list, top1000_rels, top1000_doc_ids, top1000_query_ids = get_data(top1000_data, features)
+tensor_list, rels, mean, std, train_doc_ids, train_query_ids = get_data(train_data, features)
+test_list, test_rels, _, _, test_doc_ids, test_query_ids = get_data(test_data, features)
+top1000_list, top1000_rels, _, _, top1000_doc_ids, top1000_query_ids = get_data(top1000_data, features)
 # print(tensor_list[0].size())
 CUDA = True
 model = RankNet(len(features))
@@ -215,13 +231,14 @@ if CUDA:
 # tensor_list = [tensor_list[i] / means[i] for i in range(len(tensor_list))]
 model.train()
 
-optimizer = optim.SGD(params=model.parameters(), lr=0.1)
+optimizer = optim.SGD(params=model.parameters(), lr=0.001, momentum=0.5, weight_decay=0.001)
+
 
 
 for e in range(500):
-    train(model, tensor_list, rels)
+    train(model, tensor_list, mean, std, rels)
     # accuracy = test(model, test_list, test_rels, test_doc_ids, test_query_ids)
     # print('train -> ', accuracy)
-    if e % 50 == 0:
-        accuracy = test(model, e,  top1000_list, top1000_rels, top1000_doc_ids, top1000_query_ids)
+    if e % 10 == 0:
+        accuracy = test(model, mean, std, e,  top1000_list, top1000_rels, top1000_doc_ids, top1000_query_ids)
         print('test -> ', accuracy)

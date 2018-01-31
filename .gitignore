@@ -70,6 +70,11 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+*.npy
+*.projection
+
+trec*
+
 # PyBuilder
 target/
 
@@ -84,6 +89,15 @@ celerybeat-schedule
 
 # SageMath parsed files
 *.sage.py
+
+#ignore all csv
+*.csv
+
+#ignore all lsi
+*.lsi
+
+#ignore run files
+*.run
 
 # dotenv
 .env

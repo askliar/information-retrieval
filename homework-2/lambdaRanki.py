@@ -5,44 +5,57 @@ import numpy as np
 from torch.autograd import Variable
 import time
 import torch.nn.functional as F
-import collections
+from collections import defaultdict
+from lambdaRankUtils import *
+np.random.seed(32)
+torch.manual_seed(32)
 
 # takes as input two row vectors
 def pairwise_dist2(x, y):
     y = y.view(1, -1)
-    x = y.view(1, -1)
+    x = x.view(1, -1)
     s = - y.expand(x.size(1), y.size(1))
     s += x.expand(s.t().size()).t()
-    return s.clamp(min=0)
+    return s
+
 
 def RankNetLoss(scores, rels, gamma):
     dist = pairwise_dist2(scores.t(), scores.t())
-    logs = torch.log(1 + torch.exp(-gamma * dist))
+    # logs = torch.log(1 + torch.exp(-gamma * dist))
+    logs = dist
 
     mask = pairwise_dist2(rels, rels)
-    logs.data = logs.data * mask
+    mask = mask.clamp(min=0)
+    # for i in range(mask.size(0)):
+    #     for j in range(mask.size(1)):
+    #         if dist[i,j].data != (scores[i] - scores[j]).data:
+    #             print('weee')
+    #             raise ' wedas'
+    # logs.data = logs.data * mask
 
     tot_ones = torch.sum(mask)
     if tot_ones == 0:
+        raise 'zzzz'
+        print('weeee ', tot_ones)
         return torch.sum(logs)
-
-    loss = torch.sum(logs) / tot_ones
+    # print(torch.max(logs))
+    # print(tot_ones,torch.sum(logs[mask > 0]).data[0])
+    loss = torch.sum(logs[mask > 0]) / tot_ones
     return loss
 
 
 class RankNet(nn.Module):
     def __init__(self, dim, hidden_size=1, use_cuda=True):
         super(RankNet, self).__init__()
-        self.fc1 = nn.Linear(dim, 50)
+        self.fc1 = nn.Linear(dim, 1)
         self.fc2 = nn.Linear(50, 1)
         self.use_cuda = use_cuda
-        self.gamma = 1
+
     def forward(self, data):
         x = Variable(data)
         scores = self.fc1(x)
-        scores = self.fc2(F.relu(scores))
+        # scores = self.fc2(F.relu(scores))
         return scores
-
 
 
 def get_data(df, features):
@@ -54,31 +67,32 @@ def get_data(df, features):
         final_array = []
         rels = []
         docs = []
-        qs = []
+        i = 0
         for arr in array:
             final_array.append(arr[4:-1])
             rels.append(arr[-1])
             docs.append(arr[0])
-            qs.append(arr[1])
+            if i == 0:
+                query_ids.append(arr[1])
+            i += 1
         final_rels.append(np.array(rels, dtype=np.float32))
         final_list.append(np.array(final_array, dtype=np.float32))
         final_doc_ids.append(docs)
-        query_ids.append(qs)
     # print(final_list[0], type(final_list[0]))
     # final_list[0]
     tensor_list = [torch.from_numpy(x[:, features]).cuda() for x in final_list]
     # print(tensor_list[0])
     rels = [torch.from_numpy(x).cuda() for x in final_rels]
     # print(rels[0])
-    indexes = [(torch.nonzero(x), torch.nonzero(1-x)) for x in rels]
+    indexes = [(torch.nonzero(x), torch.nonzero(1 - x)) for x in rels]
 
     return tensor_list, rels, final_doc_ids, query_ids
 
 
 
-def save_test_ranking(scores, doc_ids, query_ids, test='test'):
+def save_test_ranking(e, scores, doc_ids, query_ids, test='test'):
 
-    data = collections.defaultdict(list)
+    data = defaultdict(list)
     # The dictionary data should have the form: query_id --> (document_score, external_doc_id)
     count = 0
     for i, query_id in enumerate(query_ids):
@@ -87,65 +101,87 @@ def save_test_ranking(scores, doc_ids, query_ids, test='test'):
             print('Finished {}%...'.format(count / 15 * 10))
         count += 1
         doc_result = []
-        for k, int_doc_id in enumerate(doc_ids[query_id]):
-            ext_doc_id, _ = index.document(int_doc_id)
+        for j, ext_doc_id in enumerate(doc_ids[i]):
+            #             print(int_doc_id)
+            #             ext_doc_id, _ = index.document(int_doc_id)
 
             doc_score = scores[i][j]
             #             if doc_score != 0:
+            #             print(query_id)
             data[query_id].append((doc_score, ext_doc_id))
 
-        with open('results/RankNet{}.run'.format(test), 'w') as f_out:
+        with open('results/RankNet_{}.run'.format(str(e)), 'w') as f_out:
             write_run(
-                model_name='RankNet',
+                model_name='RankNet_' + str(e),
                 data=data,
                 out_f=f_out,
                 max_objects_per_query=1000)
-
-
 
 def train(model, tensor_list, rels):
     model.train()
     loss = Variable(torch.zeros(1).cuda())
     start = time.time()
 
+    kk = 0
+    optimizer.zero_grad()
     for q in range(len(tensor_list)):
-        optimizer.zero_grad()
+
         r = np.random.randint(0,len(tensor_list))
         # print(tensor_list[r].size(), rels[r].size())
-        scores = model(tensor_list[r]) / len(tensor_list)
-        loss += RankNetLoss(scores, rels[r], gamma=1) / len(tensor_list)
+        if torch.sum(rels[q]) == 0:
+            continue
+            # raise ' we'
+        scores = model(tensor_list[q]) #/ len(tensor_list)
+
+
+        loss = RankNetLoss(scores, rels[q], gamma=1) #/ len(tensor_list)
+        ranking, indices = torch.sort(scores[:, 0], descending=True)
+        if kk == 0:
+            print(indices)
+            kk += 1
     loss.backward()
     print('loss = ', loss.data[0])
+    # print('prima', torch.sum(model.fc1.weight), torch.sum(model.fc2.bias))
     optimizer.step()
+    # print('dopo ', torch.sum(model.fc1.weight), torch.sum(model.fc2.bias))
+
     # print('t     ', time.time() - start, ' --> ', loss.data[0])
 
+measures = ['ndcg_cut_10', 'map_cut_1000', 'recall_1000', 'P_5']
 
-def test(model, tensor_list, rels, doc_ids, query_ids):
+
+def test(model, e, tensor_list, rels, doc_ids, query_ids):
     model.eval()
     loss = Variable(torch.zeros(1).cuda())
     conf = torch.zeros(2, 2)
     scores_list = []
+    kk = 0
     for q in range(len(tensor_list)):
         optimizer.zero_grad()
-        scores = model(tensor_list[q]) / len(tensor_list)
+        scores = model(tensor_list[q])
         # scores_list.append(scores)
-        loss += RankNetLoss(scores, rels[q], gamma=1)  / len(tensor_list)
+        # loss += RankNetLoss(scores, rels[q], gamma=1) / len(tensor_list)
         ranking, indices = torch.sort(scores[:, 0], descending=True)
+        if kk == 0:
+            print(indices)
+            kk += 1
         # print(torch.max(ranking).data[0], torch.min(ranking).data[0])
 
         # predicted_rels = torch.round(ranking).clamp(min=0, max=1)
         predicted_ranking = rels[q][indices.data]
-        scores_list.append(predicted_ranking)
+        # print(ranking[:5])
+        scores_list.append(ranking.data)
         # conf += confusion_matrix(predicted_rels.data, predicted_ranking)
-    print('loss test = ', loss.data[0])
-    save_test_ranking(scores_list, doc_ids, query_ids)
-    trec_eval('RankNet', measures, validation=True)
+    # print('loss test = ', loss.data[0])
+    save_test_ranking(e, scores_list, doc_ids, query_ids)
+    results = trec_eval('RankNet_' + str(e), measures, validation=False)
     # conf /= torch.sum(conf)
     # accuracy, precision, recall = conf[0, 0] + conf[1, 1], conf[1, 1] + conf[1, 0], conf[1, 1] + conf[0, 1]
     # print('t   test  ', time.time() - start, ' --> ', loss.data[0])
     # return 0,0,0,0
-    return accuracy, precision, recall, 0
-########################################################################################################################
+    return {measure: results[measure]['all'] for measure in measures}
+
+
 
 import pandas as pd
 top1000_data = pd.read_pickle('top1000_data.pd.pkl')
@@ -165,10 +201,10 @@ top1000 = cols[:-1]
 top1000_data = top1000_data[top1000]
 
 # ---
-
 features = [i*10 for i in range(10)]
 tensor_list, rels, train_doc_ids, train_query_ids = get_data(train_data, features)
 test_list, test_rels, test_doc_ids, test_query_ids = get_data(test_data, features)
+top1000_list, top1000_rels, top1000_doc_ids, top1000_query_ids = get_data(top1000_data, features)
 # print(tensor_list[0].size())
 CUDA = True
 model = RankNet(len(features))
@@ -179,33 +215,13 @@ if CUDA:
 # tensor_list = [tensor_list[i] / means[i] for i in range(len(tensor_list))]
 model.train()
 
-optimizer = optim.Adam(params=model.parameters(), lr=0.1)
+optimizer = optim.SGD(params=model.parameters(), lr=0.1)
 
 
-########################################################################################################################
-
-
-for e in range(50):
+for e in range(500):
     train(model, tensor_list, rels)
-    accuracy, precision, recall, ndcg = test(model, tensor_list, rels, train_doc_ids, train_query_ids)
-    print('train -> ', accuracy, precision, recall)
-    accuracy, precision, recall, ndcg = test(model, test_list, test_rels, test_doc_ids, test_query_ids)
-    print('test -> ', accuracy, precision, recall)
-
-
-
-# for i in range(data.size(0)):
-#     for j in range(data.size(1)):
-#         gg = torch.log(1 + torch.exp(-self.gamma * (scores[i] - scores[j])))
-#         ddd = logs[i,j] - gg
-#         # if ddd.data[0] > 0.001:
-#         print('oops --> ', ddd.data[0], dist[i,j].data[0], scores[i].data[0], scores[j].data[0])
-#
-#         # ddd = logs[i,j] - torch.log(1 + torch.exp(-self.gamma * (scores[i] - scores[j])))[0]
-#
-#         # if torch.abs(ddd) > 0.
-# print(' other', time.time() - t2)
-# print(ones.size(), zeros.size())
-
-# print(loss / count)
-# print('mins ', torch.min(logs).data[0], torch.max(logs).data[0], torch.sum(logs).data[0] / (logs.size(0) * logs.size(1)))
+    # accuracy = test(model, test_list, test_rels, test_doc_ids, test_query_ids)
+    # print('train -> ', accuracy)
+    if e % 50 == 0:
+        accuracy = test(model, e,  top1000_list, top1000_rels, top1000_doc_ids, top1000_query_ids)
+        print('test -> ', accuracy)

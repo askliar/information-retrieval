@@ -5,6 +5,14 @@
 *.pkl
 *.pth.tar
 *.pd.pkl
+*.csv
+*.state
+*.pth
+*.projection
+*.npy
+*.lda
+*.id2word
+
 **/.DS_Store
 __pycache__/
 *.py[cod]

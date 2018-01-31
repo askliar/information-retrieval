@@ -1,7 +1,11 @@
 import io
 import time
+from lambdaRankUtils import *
 
 import sys
+from collections import defaultdict
+
+import pyndri
 import torch
 import torch.nn as nn
 import torch.nn.init as init
@@ -26,8 +30,8 @@ if CUDA:
 
 
 class NVSM(nn.Module):
-    def __init__(self, documents, t2i, i2t, embeddings, document_emb_size, word_emb_size, batch_size,
-                 n_gram, z, lamb, m):
+    def __init__(self, documents, t2i, i2t, doc2i, embeddings, document_emb_size, word_emb_size, batch_size,
+                 n_gram, z, lamb):
         super(NVSM, self).__init__()
         self.documents = documents
         self.num_documents = len(documents)
@@ -44,7 +48,7 @@ class NVSM(nn.Module):
         self.beta = Variable(torch.rand((document_emb_size, 1)).cuda(), requires_grad=True)
         self.t2i = t2i
         self.i2t = i2t
-        self.m = m
+        self.doc2i = doc2i
         # if CUDA:
         #     self.rd = self.rd.cuda()
         #     self.rv = self.rv.cuda()
@@ -148,9 +152,40 @@ class NVSM(nn.Module):
                 out = torch.cat([out, log_p_wave])
         # add RV
         loss = 1 / self.batch_size * torch.sum(out) + self.lamb / (2 * self.batch_size) * (torch.sum(self.rd*self.rd) + torch.sum(self.proj*self.proj))
-        print(loss)
+        # print(loss)
         # + torch.sum(self.rv)
         return loss
+
+    def score(self, document_id, query):
+        if CUDA:
+            query_token_ids = Variable(torch.LongTensor([self.t2i[word] for word in query if word in t2i]).cuda(), requires_grad=False)
+        else:
+            query_token_ids = Variable(torch.LongTensor([self.t2i[word] for word in query if word in t2i]), requires_grad=False)
+
+        words = self.rv.index_select(1, query_token_ids)
+        words_processed = self.g(words)
+        words_proj = self.f(words_processed)
+        try:
+            document_proj = self.rd[:, self.doc2i[document_id]]
+        except Exception:
+            return -1
+        return F.cosine_similarity(words_proj.contiguous().view(1, -1), document_proj.contiguous().view(1, -1)).data[0]
+
+def save_test_ranking(e, scores, doc_ids, query_ids, test='test'):
+
+    data = defaultdict(list)
+    # The dictionary data should have the form: query_id --> (document_score, external_doc_id)
+    count = 0
+    for idx in range(len(scores)):
+        data[query_ids[idx]].append((scores[idx], doc_ids[idx]))
+
+    with open('results/NVSM.run', 'w') as f_out:
+        write_run(
+            model_name='NVSM',
+            data=data,
+            out_f=f_out,
+            max_objects_per_query=1000)
+
 
 # index = pyndri.Index('index/')
 #
@@ -192,26 +227,82 @@ class NVSM(nn.Module):
 #     pickle.dump(documents, open('documents.pkl', 'wb'))
 #     pickle.dump(t2i, open('t2i.pkl', 'wb'))
 #     pickle.dump(i2t, open('i2t.pkl', 'wb'))
-#     # pickle.dump(word_vectors, open('word_vectors.pkl', 'wb'))
+#     pickle.dump(word_vectors, open('word_vectors.pkl', 'wb'))
 
-# print(sum([len(document) for document in documents]))
 
-# 228795
-#
+import collections
+import io
+import logging
+import sys
+
+def parse_topics(file_or_files,
+                 max_topics=sys.maxsize, delimiter=';'):
+    assert max_topics >= 0 or max_topics is None
+
+    topics = collections.OrderedDict()
+
+    if not isinstance(file_or_files, list) and \
+            not isinstance(file_or_files, tuple):
+        if hasattr(file_or_files, '__iter__'):
+            file_or_files = list(file_or_files)
+        else:
+            file_or_files = [file_or_files]
+
+    for f in file_or_files:
+        assert isinstance(f, io.IOBase)
+
+        for line in f:
+            assert(isinstance(line, str))
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            topic_id, terms = line.split(delimiter, 1)
+
+            if topic_id in topics and (topics[topic_id] != terms):
+                    logging.error('Duplicate topic "%s" (%s vs. %s).',
+                                  topic_id,
+                                  topics[topic_id],
+                                  terms)
+
+            topics[topic_id] = terms
+
+            if max_topics > 0 and len(topics) >= max_topics:
+                break
+
+    return topics
+
+with open('./ap_88_89/topics_title', 'r') as f_topics:
+    queries = parse_topics([f_topics])
+
+index = pyndri.Index('index/')
+start_time = time.time()
+num_documents = index.maximum_document() - index.document_base()
+
+dictionary = pyndri.extract_dictionary(index)
+
+tokenized_queries = {
+    query_id: [token
+               for token in index.tokenize(query_string)
+               if dictionary.has_token(token)]
+    for query_id, query_string in queries.items()}
+
+
 if os.path.exists('t2i.pkl') and os.path.exists('i2t.pkl') \
-        and os.path.exists('documents.pkl') and os.path.exists('word_vectors.pkl'):
+        and os.path.exists('documents.pkl') and os.path.exists('word_vectors.pkl')\
+        and os.path.exists('doc2i.pkl'):
     documents = pickle.load(open('documents.pkl', 'rb'))
-    # documents = documents[:10000]
+    doc2i = pickle.load(open('doc2i.pkl', 'rb'))
     t2i = pickle.load(open('t2i.pkl', 'rb'))
     i2t = pickle.load(open('i2t.pkl', 'rb'))
     word_vectors = pickle.load(open('model.pkl', 'rb'))
 
-# num_documents = index.maximum_document() - index.document_base()
-
-model = NVSM(documents, t2i, i2t, word_vectors, 256, 300, 2500, n_gram, 10, 0.01, 10)
+model = NVSM(documents, t2i, i2t, doc2i, word_vectors, 256, 300, 2500, n_gram, 10, 0.01)
 if CUDA:
     model = model.cuda()
-# with torch.autograd.profiler.profile() as prof:
+
 if os.path.exists('model.pth'):
     model.load_state_dict(torch.load('model.pth'))
 
@@ -231,7 +322,6 @@ for i in range(epochs):
         optimizer.zero_grad()
         loss = model()
         total_loss += loss.data[0]
-        loss += loss.data[0]
         loss.backward()
         optimizer.step()
         print('Time for 1 batch is: {}'.format(time.time() - batch_start_time))
@@ -246,3 +336,32 @@ for i in range(epochs):
     torch.save(optimizer.state_dict(), 'optim.pth')
 
 print(losses)
+
+
+import pandas as pd
+
+
+model.eval()
+
+train_data = pd.read_pickle('train_data.pd.pkl')
+doc_ids = []
+query_ids = []
+scores = []
+for i, data in train_data.iterrows():
+    print(i)
+    doc_ids.append(data.ext_doc_id)
+    query_ids.append(data.query_id)
+    scores.append(model.score(data.ext_doc_id, tokenized_queries[str(data.query_id)]))
+
+save_test_ranking(0, scores, doc_ids, query_ids)
+
+test_data = pd.read_pickle('test_data.pd.pkl')
+doc_ids = []
+query_ids = []
+scores = []
+for i, data in train_data.iterrows():
+    doc_ids.append(data.ext_doc_id)
+    query_ids.append(data.query_id)
+    scores.append(model.score(data.ext_doc_id, tokenized_queries[str(data.query_id)]))
+
+save_test_ranking(0, scores, doc_ids, query_ids)

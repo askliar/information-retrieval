@@ -1,4 +1,4 @@
-# Reinforcement Learning
+# Information Retrieval
 
 [![License](http://img.shields.io/:license-mit-blue.svg)](LICENSE)
 
@@ -45,5 +45,5 @@ jupyter notebook #notebook#.ipynb
 Copyright © 2018 Andrii Skliar.
 
 <p align=“justify”>
-This project is distributed under the <a href="LICENSE">MIT license</a>. This was developed as part of the Reinforcement Learning course taught by Herke van Hoof at the University of Amsterdam. Please follow the <a href="http://student.uva.nl/en/content/az/plagiarism-and-fraud/plagiarism-and-fraud.html">UvA regulations governing Fraud and Plagiarism</a> in case you are a student.
+This project is distributed under the <a href="LICENSE">MIT license</a>. This was developed as part of the Information Retrieval course taught by Evangelos Kanoulas at the University of Amsterdam. Please follow the <a href="http://student.uva.nl/en/content/az/plagiarism-and-fraud/plagiarism-and-fraud.html">UvA regulations governing Fraud and Plagiarism</a> in case you are a student.
 </p>

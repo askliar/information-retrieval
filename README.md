@@ -8,7 +8,7 @@ Labs of the [Information Retrieval 1](http://studiegids.uva.nl/xmlpages/page/201
 
 #### Lab 1 - Evaluation Measures, Interleaving and Click Models
 
-[Problem statement and Solution](https://github.com/askliar/information-retrieval/homework-1/hw1-lab.ipynb)
+[Problem statement and Solution](homework-1/hw1-lab.ipynb)
 
 Commercial search engines typically use a funnel approach in evaluating a new search algorithm: they first use an offline test collection to compare the production algorithm (P) with the new experimental algorithm (E); if E outperforms P with respect to the evaluation measure of their interest, the two algorithms are then compared online through an interleaving experiment.
 
@@ -16,7 +16,7 @@ Therefore, one of the key questions in IR is whether offline evaluation and onli
 
 #### Lab 2 - A Study of Lexical and Semantic Language Models Applied to Information Retrieval and Learning to Rank
 
-[Problem statement and Solution](https://github.com/askliar/information-retrieval/homework-2/hw2-lab.ipynb) - [Report](https://github.com/askliar/information-retrieval/homework-2/hw2-report.pdf)
+[Problem statement and Solution](homework-2/hw2-lab.ipynb) - [Report](homework-2/hw2-report.pdf)
 
 In a typical IR task we are interested in finding a (usually ranked) list of results that satisfy the information need of a user expressed by means of a query. Many difficulties arise as the satisfaction and information need of the user cannot be directly observed, and thus queries from users can be interpreted in many ways. Moreover, the query is merely a linguistic representation of the actual information need of the user and the gap between them can not be measured either. 
 
